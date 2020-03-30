@@ -8,6 +8,7 @@ pygame.init()
 screen = pygame.display.set_mode((800, 600))
 pygame.display.set_caption('Corona Run')
 fps = pygame.time.Clock()
+pygame.font.init()
 
 def update(renderList):
     persons = []
@@ -44,7 +45,8 @@ def update(renderList):
         for v in viruses:
             d = np.sqrt(np.power((p.pos[0] - v.pos[0]), 2) + np.power((p.pos[1] - v.pos[1]), 2)) - 1
             if d <= p.radius:
-                p.contractInfection()  
+                p.contractInfection()
+                v.pos = [1000, 1000]  
 
     #no longer update objects outside of the screen
     k = np.asarray(killIdxs)
@@ -55,11 +57,13 @@ def update(renderList):
     return renderList
 
 
-def render(renderList):
-    screen.fill((0,0,0))
+def render(renderList, metricsSrfc):
+    screen.fill((0,255,0))
 
     for objct in renderList:
         pygame.draw.circle(screen, objct.color, objct.pos, objct.radius, 0)
+
+    screen.blit(metricsSrfc,(0,0))
 
     pygame.display.update()
     fps.tick(10)
@@ -234,4 +238,19 @@ if __name__ == '__main__':
                     #    renderList.append(Virus( pos = [130, 240]))
         
         renderList = update(renderList)
-        render(renderList)
+
+        #metrics
+        numPersons = 0
+        numInfected = 0
+
+        for objct in renderList:
+            if objct.isPerson():
+                numPersons += 1
+                if objct.isInfected():
+                    numInfected += 1
+
+        #Setting up to display metrics on gui
+        leFont = pygame.font.SysFont('Comic Sans MS', 30)
+        metricsSrfc = leFont.render('Total: {}   Infected: {}'.format(numPersons, numInfected), False, (0, 0, 0))
+
+        render(renderList, metricsSrfc)
