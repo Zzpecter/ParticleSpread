@@ -1,6 +1,14 @@
 # ParticleSpread
 Basic Simulation of how virus particles spread between crowds. May become a game.
 
+HOW TO RUN:
+
+1. Install Python 3 https:\\python.org
+2. Install dependencies:
+    pip install numpy
+    pip install pygame
+3. Run ps.py
+    press space
 
 #TODO
 - Add cough, sneeze, breath in and out functions.
