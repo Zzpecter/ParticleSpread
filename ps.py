@@ -3,72 +3,6 @@ import sys
 import random
 import numpy as np
 
-# Initialization
-pygame.init()
-screen = pygame.display.set_mode((800, 600))
-pygame.display.set_caption('Corona Run')
-fps = pygame.time.Clock()
-pygame.font.init()
-
-def update(renderList):
-    persons = []
-    viruses = []
-    killIdxs = []
-    idx = 0
-    
-    #Main update loop
-    print('Objects being traced: {}'.format(len(renderList)))
-    for objct in renderList:
-
-        #Check and skip objects out of screen
-        if(objct.pos[0]>800 or objct.pos[0]<0 or objct.pos[1]>600 or objct.pos[1]<0):
-            killIdxs.append(idx)
-
-        #Update Viruses
-        elif(objct.isVirus()):
-            objct.move()
-            viruses.append(objct)
-            if objct.lifeTime == 0:
-                killIdxs.append(idx)
-
-        #Update Persons
-        elif(objct.isPerson()):
-            newViruses = objct.update()
-            for v in newViruses:
-                renderList.append(v)
-            persons.append(objct)
-        idx += 1
-
-    #check for collisions, aka new infections
-    #for each person, check all viruses
-    for p in persons:
-        for v in viruses:
-            d = np.sqrt(np.power((p.pos[0] - v.pos[0]), 2) + np.power((p.pos[1] - v.pos[1]), 2)) - 1
-            if d <= p.radius:
-                p.contractInfection()
-                v.pos = [1000, 1000]  
-
-    #no longer update objects outside of the screen
-    k = np.asarray(killIdxs)
-    k = -np.sort(-k)
-    for i in k:
-        del renderList[i]
-
-    return renderList
-
-
-def render(renderList, metricsSrfc):
-    screen.fill((0,255,0))
-
-    for objct in renderList:
-        pygame.draw.circle(screen, objct.color, objct.pos, objct.radius, 0)
-
-    screen.blit(metricsSrfc,(0,0))
-
-    pygame.display.update()
-    fps.tick(10)
-
-
 class Ball():
     def __init__(self, color, radius, pos,  speed):
         self.color = color
@@ -89,21 +23,27 @@ class Ball():
         #each time the balll moves, a deceleration must happen
 
 class Person(Ball):
-    def __init__(self, pos, facing = 'RIGHT', color = (255, 255, 255), radius = 30, speed = [0, 0], immunity=0, infected = False):
+    def __init__(self, pos, id, facing = 'RIGHT', color = (255, 255, 255), radius = 15, speed = [0, 0], immunity=0, infected = False, route = None):
         self.color = color
         self.radius = radius
         self.pos = pos
+        self.id = id
         self.speed = speed
         self.immunity = immunity
         self.infected = infected
         self.infectionState = 0.0 #0 to 1 multiplier
         self.timeInfected = 0 
+        self.route = route
         if (self.infected):
             self.color = (255,255,0)
         self.facing = facing
+        self.speed = 1
+        self.waitTime = 0
 
     def update(self):
         viruses = []
+
+        #Cough or sneeze if infected
         if self.isInfected():
             if random.randint(1, 100) < int(self.infectionState * 100) + 1:
                 viruses =self.cough()
@@ -180,6 +120,80 @@ class Person(Ball):
             viruses.append(Virus(pos = [posX, posY], speed = [random.randint(1,7) * xSpeedM, random.randint(-3,3)* ySpeedM]))
         return viruses
 
+    def move(self, direction):
+        if self.route is not None:
+            if self.waitTime == 0:
+                startPoint = self.pos
+                nextPoint = self.route.getNextPoint()
+
+                if direction == 'RIGHT':
+                    d = np.abs(startPoint[0] - nextPoint[0])
+                    if self.speed < d:
+                        self.pos = [self.pos[0] + self.speed, self.pos[1]]
+                    else:
+                        self.pos = [self.pos[0] + d, self.pos[1]]
+                        if np.abs(startPoint[1] - nextPoint[1]) == 0:
+                            self.route.currentIdx += 1
+                    self.facing = 'RIGHT'
+
+                elif direction == 'LEFT':
+                    d = np.abs(startPoint[0] - nextPoint[0])
+                    if np.abs(self.speed) < d:
+                        self.pos = [self.pos[0] - self.speed, self.pos[1]]
+                    else:
+                        self.pos = [self.pos[0] - d, self.pos[1]]
+                        if np.abs(startPoint[1] - nextPoint[1]) == 0:
+                            self.route.currentIdx += 1
+                    self.facing = 'LEFT'
+
+                elif direction == 'DOWN':
+                    d = np.abs(startPoint[1] - nextPoint[1])
+                    if self.speed < d:
+                        self.pos = [self.pos[0], self.pos[1] + self.speed]
+                    else:
+                        self.pos = [self.pos[0], self.pos[1] + d]
+                        if np.abs(startPoint[0] - nextPoint[0]) == 0:
+                            self.route.currentIdx += 1
+                    self.facing = 'DOWN'
+
+                elif direction == 'UP':
+                    d = np.abs(startPoint[1] - nextPoint[1])
+                    if np.abs(self.speed) < d:
+                        self.pos = [self.pos[0], self.pos[1] - self.speed]
+                    else:
+                        self.pos = [self.pos[0], self.pos[1] - d]
+                        if np.abs(startPoint[0] - nextPoint[0]) == 0:
+                            self.route.currentIdx += 1
+                    self.facing = 'UP'
+            else:
+                self.waitTime -= 1
+
+    def getMoveHeading(self):
+        startPoint = self.pos
+        nextPoint = self.route.getNextPoint()
+        direction = None
+
+        #walk right
+        if startPoint[0] < nextPoint[0]:
+            direction = 'RIGHT'
+        #walk left
+        elif startPoint[0] > nextPoint[0]:
+            direction = 'LEFT'
+        #walk down
+        elif startPoint[1] < nextPoint[1]:
+            direction = 'DOWN'
+        #walk up
+        elif startPoint[1] > nextPoint[1]:
+            direction = 'UP'
+
+        return direction
+
+    def checkCollision(self, other, safeDist):
+        if np.sqrt(np.square(self.pos[0] - other.pos[0]) + np.square(self.pos[1] - other.pos[1])) <= (self.radius + other.radius + safeDist):
+            return True
+        else:
+            return False
+
 class Virus(Ball):
     def __init__(self, pos, color = (255, 50, 50), radius = 2, speed = [0, 0]):
         self.color = color
@@ -214,13 +228,137 @@ class Virus(Ball):
         if self.lifeTime > 0:
             self.lifeTime -= 1
 
+class Route():
+    def __init__(self, wayPoints, currentIdx = 0):
+        self.wayPoints = wayPoints
+        self.currentIdx = currentIdx
+
+    def getCurrentPoint(self):
+        return self.wayPoints[self.currentIdx]
+
+    def getNextPoint(self):
+        return self.wayPoints[self.currentIdx + 1]
+
+# Initialization
+pygame.init()
+screen = pygame.display.set_mode((800, 600))
+pygame.display.set_caption('Corona Run')
+fps = pygame.time.Clock()
+pygame.font.init()
+
+def update(renderList):
+    persons = []
+    viruses = []
+    killIdxs = []
+    idx = 0
+    
+    #Main update loop
+    print('Objects being traced: {}'.format(len(renderList)))
+    for objct in renderList:
+
+        #Check and skip objects out of screen
+        if(objct.pos[0]>800 or objct.pos[0]<0 or objct.pos[1]>600 or objct.pos[1]<0):
+            killIdxs.append(idx)
+
+        #Update Viruses
+        elif(objct.isVirus()):
+            objct.move()
+            viruses.append(objct)
+            if objct.lifeTime == 0:
+                killIdxs.append(idx)
+
+        #Update Persons
+        elif(objct.isPerson()):
+            #check new viruses
+            newViruses = objct.update()
+            for v in newViruses:
+                renderList.append(v)
+            persons.append(objct)
+
+            #check if the person is a the counter, if so give waitTime
+            if objct.pos == [770, 260]:
+                objct.waitTime = 80
+        idx += 1
+
+    #Move all moveable persons, check collision before moving
+    newPos = [0, 0]
+    for p in persons:
+        if p.route is not None:
+            direction = p.getMoveHeading()
+            if direction == 'RIGHT':
+                newPos = [p.pos[0] + p.speed, p.pos[1]]
+            elif direction == 'LEFT':
+                newPos = [p.pos[0] - p.speed, p.pos[1]]
+            elif direction == 'DOWN':
+                newPos = [p.pos[0], p.pos[1] + p.speed]
+            elif direction == 'UP':
+                newPos = [p.pos[0], p.pos[1] - p.speed]
+
+            #check all persons
+            coll = False
+            for pCheck in persons:
+                if pCheck.id != p.id and p.checkCollision(pCheck, safeDist = 10):
+                    coll = True
+                    break
+
+            if not coll:
+                p.move(direction)
+
+
+
+
+    #check for collisions, aka new infections
+    #for each person, check all viruses
+    for p in persons:
+        for v in viruses:
+            d = np.sqrt(np.power((p.pos[0] - v.pos[0]), 2) + np.power((p.pos[1] - v.pos[1]), 2)) - 1
+            if d <= p.radius:
+                p.contractInfection()
+                v.pos = [1000, 1000]  
+
+    #no longer update objects outside of the screen
+    k = np.asarray(killIdxs)
+    k = -np.sort(-k)
+    for i in k:
+        del renderList[i]
+
+    return renderList
+
+def render(renderList, metricsSrfc, backgrnd):
+    screen.fill((0,255,0))
+    screen.blit(backgrnd, [0, 0])
+
+    for objct in renderList:
+        pygame.draw.circle(screen, objct.color, objct.pos, objct.radius, 0)
+
+    screen.blit(metricsSrfc,(0,0))
+
+    pygame.display.update()
+    fps.tick(10)
+
 if __name__ == '__main__':
 
-    testSubject = Person(pos =  [100, 240])
-    testSubject2 = Person(pos =  [500, 240], facing = 'LEFT')
+    bgr = pygame.image.load("./screens/backgr_Queue.bmp").convert()
+
+    queueRoute = Route(wayPoints = ([770, 260], [770, -15]))
+
+    testSubject = Person(pos =  [600, 260], id = 1, route = queueRoute)
+    testSubject2 = Person(pos =  [450, 260], id = 2, route = queueRoute)
+    testSubject3 = Person(pos =  [390, 260], id = 3, route = queueRoute)
+    testSubject4 = Person(pos =  [320, 260], id = 4, route = queueRoute)
+    testSubject5 = Person(pos =  [250, 260], id = 5, route = queueRoute)
+    testSubject6 = Person(pos =  [200, 260], id = 6, route = queueRoute)
+    testSubject7 = Person(pos =  [100, 260], id = 7, route = queueRoute)
+    testSubject8 = Person(pos =  [400, 390], id = 8, facing = 'UP', infected = True)
     renderList = []
     renderList.append(testSubject)
     renderList.append(testSubject2)
+    renderList.append(testSubject3)
+    renderList.append(testSubject4)
+    renderList.append(testSubject5)
+    renderList.append(testSubject6)
+    renderList.append(testSubject7)
+    renderList.append(testSubject8)
 
     while True:
         for event in pygame.event.get():
@@ -230,7 +368,7 @@ if __name__ == '__main__':
             if event.type == pygame.KEYUP:
                 if event.key == pygame.K_SPACE:
 
-                    newViruses = testSubject.cough()
+                    newViruses = testSubject8.cough()
                     for v in newViruses:
                         renderList.append(v)
                     #numP = random.randint(3,20)
@@ -253,4 +391,4 @@ if __name__ == '__main__':
         leFont = pygame.font.SysFont('Comic Sans MS', 30)
         metricsSrfc = leFont.render('Total: {}   Infected: {}'.format(numPersons, numInfected), False, (0, 0, 0))
 
-        render(renderList, metricsSrfc)
+        render(renderList, metricsSrfc, bgr)
