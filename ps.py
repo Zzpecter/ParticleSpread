@@ -23,7 +23,7 @@ class Ball():
         #each time the balll moves, a deceleration must happen
 
 class Person(Ball):
-    def __init__(self, pos, id, facing = 'RIGHT', color = (255, 255, 255), radius = 15, speed = [0, 0], immunity=0, infected = False, route = None):
+    def __init__(self, pos, id, facing = 'RIGHT', color = (237, 217, 210), texture = None, radius = 15, speed = [0, 0], immunity=0, infected = False, route = None):
         self.color = color
         self.radius = radius
         self.pos = pos
@@ -39,6 +39,9 @@ class Person(Ball):
         self.facing = facing
         self.speed = 1
         self.waitTime = 0
+        self.waiting = False
+        self.served = False
+        self.texture = texture
 
     def update(self):
         viruses = []
@@ -77,19 +80,23 @@ class Person(Ball):
             if self.facing == 'RIGHT':
                 posX = self.pos[0] + self.radius
                 posY = self.pos[1]
+                ySpeedM = random.randint(-1, 1)
             elif self.facing == 'LEFT':
                 posX = self.pos[0] - self.radius
                 posY = self.pos[1]
                 xSpeedM = -1
+                ySpeedM = random.randint(-1, 1)
             elif self.facing == 'UP':
                 posX = self.pos[0] 
                 posY = self.pos[1] - self.radius
                 ySpeedM = -1
+                xSpeedM = random.randint(-1, 1)
             elif self.facing == 'DOWN':
                 posX = self.pos[0]
                 posY = self.pos[1] + self.radius
+                xSpeedM = random.randint(-1, 1)
 
-            viruses.append(Virus(pos = [posX, posY], speed = [random.randint(1,5) * xSpeedM, random.randint(-6,6)* ySpeedM]))
+            viruses.append(Virus(pos = [posX, posY], speed = [random.randint(4,10) * xSpeedM, random.randint(-6,6)* ySpeedM]))
         return viruses
 
     def sneeze(self):
@@ -105,24 +112,28 @@ class Person(Ball):
             if self.facing == 'RIGHT':
                 posX = self.pos[0] + self.radius
                 posY = self.pos[1]
+                ySpeedM = random.randint(-1, 1)
             elif self.facing == 'LEFT':
                 posX = self.pos[0] - self.radius
                 posY = self.pos[1]
+                ySpeedM = random.randint(-1, 1)
                 xSpeedM = -1
             elif self.facing == 'UP':
                 posX = self.pos[0] 
                 posY = self.pos[1] - self.radius
                 ySpeedM = -1
+                xSpeedM = random.randint(-1, 1)
             elif self.facing == 'DOWN':
                 posX = self.pos[0]
                 posY = self.pos[1] + self.radius
+                xSpeedM = random.randint(-1, 1)
 
-            viruses.append(Virus(pos = [posX, posY], speed = [random.randint(1,7) * xSpeedM, random.randint(-3,3)* ySpeedM]))
+            viruses.append(Virus(pos = [posX, posY], speed = [random.randint(8,15) * xSpeedM, random.randint(-4,4)* ySpeedM]))
         return viruses
 
     def move(self, direction):
         if self.route is not None:
-            if self.waitTime == 0:
+            if not self.waiting:
                 startPoint = self.pos
                 nextPoint = self.route.getNextPoint()
 
@@ -167,6 +178,11 @@ class Person(Ball):
                     self.facing = 'UP'
             else:
                 self.waitTime -= 1
+                print('waiting {}...'.format(self.waitTime))
+                if self.waitTime == 0:
+                    self.waiting = False
+                    self.served = True
+                    print('Served!')
 
     def getMoveHeading(self):
         startPoint = self.pos
@@ -188,8 +204,8 @@ class Person(Ball):
 
         return direction
 
-    def checkCollision(self, other, safeDist):
-        if np.sqrt(np.square(self.pos[0] - other.pos[0]) + np.square(self.pos[1] - other.pos[1])) <= (self.radius + other.radius + safeDist):
+    def checkCollision(self, newPos, r, safeDist):
+        if np.sqrt(np.square(self.pos[0] - newPos[0]) + np.square(self.pos[1] - newPos[1])) <= (self.radius + r + safeDist):
             return True
         else:
             return False
@@ -217,13 +233,14 @@ class Virus(Ball):
         self.pos[1] += self.speed[1]
 
         #each time the balll moves, a deceleration must happen
-        decelX = 0.8 * self.trueXSpeed  #TODO: Logarithmic or some other kind of smoother deceleration funtion.
-        decelY = 0.8 * self.trueYSpeed
+        if self.trueXSpeed > 1 and self.trueYSpeed > 1: # needed for log
+            decelX = np.log(self.trueXSpeed)   
+            decelY = np.log(self.trueYSpeed)
 
-        self.trueXSpeed -= decelX
-        self.trueYSpeed -= decelY
-        self.speed[0] -= int(self.trueXSpeed)
-        self.speed[1] -= int(self.trueYSpeed)
+            self.trueXSpeed -= decelX
+            self.trueYSpeed -= decelY
+            self.speed[0] = int(self.trueXSpeed)
+            self.speed[1] = int(self.trueYSpeed)
 
         if self.lifeTime > 0:
             self.lifeTime -= 1
@@ -275,15 +292,16 @@ def update(renderList):
                 renderList.append(v)
             persons.append(objct)
 
-            #check if the person is a the counter, if so give waitTime
-            if objct.pos == [770, 260]:
-                objct.waitTime = 80
+            
+            
         idx += 1
 
     #Move all moveable persons, check collision before moving
     newPos = [0, 0]
     for p in persons:
         if p.route is not None:
+
+
             direction = p.getMoveHeading()
             if direction == 'RIGHT':
                 newPos = [p.pos[0] + p.speed, p.pos[1]]
@@ -297,15 +315,17 @@ def update(renderList):
             #check all persons
             coll = False
             for pCheck in persons:
-                if pCheck.id != p.id and p.checkCollision(pCheck, safeDist = 10):
+                if pCheck.id != p.id and pCheck.checkCollision(newPos, p.radius, safeDist = 10):
                     coll = True
                     break
 
             if not coll:
                 p.move(direction)
 
-
-
+            #check if the person is at the counter, if so give waitTime
+            if p.pos == [770, 260] and not p.waiting and not p.served:
+                p.waitTime = 100
+                p.waiting = True
 
     #check for collisions, aka new infections
     #for each person, check all viruses
@@ -324,12 +344,30 @@ def update(renderList):
 
     return renderList
 
-def render(renderList, metricsSrfc, backgrnd):
+def render(renderList, metricsSrfc, backgrnd, persImg):
     screen.fill((0,255,0))
     screen.blit(backgrnd, [0, 0])
 
     for objct in renderList:
-        pygame.draw.circle(screen, objct.color, objct.pos, objct.radius, 0)
+        if objct.isVirus():
+            pygame.draw.circle(screen, objct.color, objct.pos, objct.radius, 0)
+        elif objct.isPerson():
+            if objct.texture is not None:
+
+
+                if objct.facing == 'RIGHT':
+                    angle = 270
+                elif objct.facing == 'LEFT':
+                    angle = 90
+                elif objct.facing == 'UP':
+                    angle = 0
+                elif objct.facing == 'DOWN':
+                    angle = 180
+
+                auxImg = pygame.transform.rotate(persImg, angle)
+                screen.blit(auxImg, objct.pos)
+            else:
+                pygame.draw.circle(screen, objct.color, objct.pos, objct.radius, 0)
 
     screen.blit(metricsSrfc,(0,0))
 
@@ -339,17 +377,18 @@ def render(renderList, metricsSrfc, backgrnd):
 if __name__ == '__main__':
 
     bgr = pygame.image.load("./screens/backgr_Queue.bmp").convert()
+    persImg = pygame.image.load('./screens/pers_young_1.png')
 
     queueRoute = Route(wayPoints = ([770, 260], [770, -15]))
 
-    testSubject = Person(pos =  [600, 260], id = 1, route = queueRoute)
-    testSubject2 = Person(pos =  [450, 260], id = 2, route = queueRoute)
-    testSubject3 = Person(pos =  [390, 260], id = 3, route = queueRoute)
-    testSubject4 = Person(pos =  [320, 260], id = 4, route = queueRoute)
-    testSubject5 = Person(pos =  [250, 260], id = 5, route = queueRoute)
-    testSubject6 = Person(pos =  [200, 260], id = 6, route = queueRoute)
-    testSubject7 = Person(pos =  [100, 260], id = 7, route = queueRoute)
-    testSubject8 = Person(pos =  [400, 390], id = 8, facing = 'UP', infected = True)
+    testSubject = Person(pos =  [600, 260], texture = persImg, id = 1, route = queueRoute)
+    testSubject2 = Person(pos =  [450, 260], texture = persImg, id = 2, route = queueRoute)
+    testSubject3 = Person(pos =  [390, 260], texture = persImg, id = 3, route = queueRoute)
+    testSubject4 = Person(pos =  [320, 260], texture = persImg, id = 4, route = queueRoute)
+    testSubject5 = Person(pos =  [250, 260], texture = persImg, id = 5, route = queueRoute)
+    testSubject6 = Person(pos =  [200, 260], texture = persImg, id = 6, route = queueRoute)
+    testSubject7 = Person(pos =  [100, 260], texture = persImg, id = 7, route = queueRoute)
+    testSubject8 = Person(pos =  [400, 390], texture = persImg, id = 8, facing = 'UP', infected = True)
     renderList = []
     renderList.append(testSubject)
     renderList.append(testSubject2)
@@ -390,5 +429,4 @@ if __name__ == '__main__':
         #Setting up to display metrics on gui
         leFont = pygame.font.SysFont('Comic Sans MS', 30)
         metricsSrfc = leFont.render('Total: {}   Infected: {}'.format(numPersons, numInfected), False, (0, 0, 0))
-
-        render(renderList, metricsSrfc, bgr)
+        render(renderList, metricsSrfc, bgr, persImg)
